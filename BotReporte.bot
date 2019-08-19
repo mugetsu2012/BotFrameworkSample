@@ -1,0 +1,18 @@
+{
+    "name": "BotReporte",
+    "description": "",
+    "services": [
+        {
+            "type": "endpoint",
+            "appId": "",
+            "appPassword": "",
+            "endpoint": "http://localhost:63055/api/messages",
+            "id": "84f27480-c213-11e9-8ca1-c97bf97f1338",
+            "name": "http://localhost:63055/api/messages"
+        }
+    ],
+    "padlock": "",
+    "version": "2.0",
+    "overrides": null,
+    "path": "C:\\Users\\Douglas\\source\\repos\\BotFrameworkSample\\BotReporte.bot"
+}

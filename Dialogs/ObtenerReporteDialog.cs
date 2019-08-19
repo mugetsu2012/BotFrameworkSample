@@ -35,6 +35,7 @@ namespace BotFrameworkSample.Dialogs
                 OpcionesStepAsync,
                 NumeroTelefonoStepAsync,
                 OtpStepAsync,
+                ValidarOtpStepAsync,
                 ResumenStepAsync
             };
 
@@ -42,7 +43,9 @@ namespace BotFrameworkSample.Dialogs
             AddDialog(new WaterfallDialog($"{nameof(ObtenerReporteDialog)}.mainFlow", steps));
             AddDialog(new ChoicePrompt($"{nameof(ObtenerReporteDialog)}.opcion"));
             AddDialog(new TextPrompt($"{nameof(ObtenerReporteDialog)}.telefono", TelefonoValidatorAsync));
-            AddDialog(new TextPrompt($"{nameof(ObtenerReporteDialog)}.otp", OtpValidatorAsync));
+            AddDialog(new TextPrompt($"{nameof(ObtenerReporteDialog)}.otp"));
+            AddDialog(new PreguntarReintentoDialog($"{nameof(ObtenerReporteDialog)}.preguntarReintento",
+                _botStateService));
 
             //Seteamos el main id
             InitialDialogId = $"{nameof(ObtenerReporteDialog)}.mainFlow";
@@ -135,6 +138,41 @@ namespace BotFrameworkSample.Dialogs
             }, cancellationToken);
         }
 
+
+        private async Task<DialogTurnResult> ValidarOtpStepAsync(WaterfallStepContext stepContext,
+            CancellationToken cancellationToken)
+        {
+            string otpIngresado = (string)stepContext.Result;
+            //Sacamos el OTP que dio el usuario del paso anterior
+            stepContext.Values["otp"] = otpIngresado;
+
+            bool esOtpValido =
+                await EsOtpValidoAsync(otpIngresado, stepContext.Context, cancellationToken);
+
+            //Si el OTP es valido, lo mando al resumen
+            if (esOtpValido)
+            {
+                //Le seteo el OTP al fulano
+
+                // Sacamos al usuario
+                PerfilDeUsuario perfilDeUsuario = await _botStateService.PerfilDeUsuarioAccessor.GetAsync(stepContext.Context,
+                    () => new PerfilDeUsuario(), cancellationToken);
+
+                perfilDeUsuario.NumeroOTP = otpIngresado;
+
+                await _botStateService.PerfilDeUsuarioAccessor.SetAsync(stepContext.Context, perfilDeUsuario,
+                    cancellationToken);
+
+                return await stepContext.NextAsync(null, cancellationToken);
+            }
+            else
+            {
+                //Si el OTP no es valido lo mando a al step de preguntar que quiere hacer
+                return await stepContext.BeginDialogAsync($"{nameof(ObtenerReporteDialog)}.preguntarReintento", null,
+                    cancellationToken);
+            }
+        }
+
         /// <summary>
         /// Metodo final. Aca le doy un resumen y termino el dialogo
         /// </summary>
@@ -144,9 +182,6 @@ namespace BotFrameworkSample.Dialogs
         private async Task<DialogTurnResult> ResumenStepAsync(WaterfallStepContext stepContext,
             CancellationToken cancellationToken)
         {
-            //Sacamos el OTP que dio el usuario del paso anterior
-            stepContext.Values["otp"] = (string)stepContext.Result;
-
             //Sacamos al usuario
             PerfilDeUsuario perfilDeUsuario = await _botStateService.PerfilDeUsuarioAccessor.GetAsync(stepContext.Context,
                 () => new PerfilDeUsuario(), cancellationToken);
@@ -154,7 +189,6 @@ namespace BotFrameworkSample.Dialogs
             //Seteo al usuario la data
             perfilDeUsuario.NumeroTelefono = (string)stepContext.Values["telefono"];
             perfilDeUsuario.OpcionElegida = (string)stepContext.Values["opcion"];
-            perfilDeUsuario.NumeroOTP = (string)stepContext.Values["otp"];
 
             //Muestro el resumen al usuario y su reporte
             await stepContext.Context.SendActivityAsync(
@@ -229,6 +263,18 @@ namespace BotFrameworkSample.Dialogs
                         cancellationToken);
                 }
             }
+            return valid;
+        }
+
+        private async Task<bool> EsOtpValidoAsync(string texto, ITurnContext context, CancellationToken cancellationToken)
+        {
+            //Mando a sacar el objeto de la coversacion donde ya guarde el OTP
+            DataConversation dataConversation =
+                await _botStateService.DataConversationAccessor.GetAsync(context,
+                    () => new DataConversation(), cancellationToken);
+
+            bool valid = texto == dataConversation.OTP;
+
             return valid;
         }
 

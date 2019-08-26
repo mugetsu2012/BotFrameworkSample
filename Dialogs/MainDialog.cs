@@ -12,10 +12,12 @@ namespace BotFrameworkSample.Dialogs
     public class MainDialog: ComponentDialog
     {
         private readonly BotStateService _botStateService;
+        private readonly int _minutosVencerNumero;
 
-        public MainDialog(BotStateService botStateService): base(nameof(MainDialog))
+        public MainDialog(BotStateService botStateService, int minutosVencerNumero): base(nameof(MainDialog))
         {
             _botStateService = botStateService;
+            _minutosVencerNumero = minutosVencerNumero;
             InicializarCascada();
         }
 
@@ -29,7 +31,7 @@ namespace BotFrameworkSample.Dialogs
 
             //Agrego los dialogos a utilizar
             AddDialog(new WaterfallDialog($"{nameof(MainDialog)}.mainFlow", steps));
-            AddDialog(new ObtenerReporteDialog($"{nameof(MainDialog)}.obtenerReporte", _botStateService));
+            AddDialog(new ObtenerReporteDialog($"{nameof(MainDialog)}.obtenerReporte", _botStateService, _minutosVencerNumero));
             
             //Seteo el id del dialogo inicial
             InitialDialogId = $"{nameof(MainDialog)}.mainFlow";
@@ -38,6 +40,10 @@ namespace BotFrameworkSample.Dialogs
 
         private async Task<DialogTurnResult> InitialSteAsync(WaterfallStepContext stepContext, CancellationToken cancellationToken)
         {
+            string from = stepContext.Context.Activity.From.Id;
+
+            string to = stepContext.Context.Activity.Recipient.Id;
+
             //Damos una bienvenida al usuario y llamamos al dialogo correcto
             await stepContext.Context.SendActivityAsync(MessageFactory.Text("Bienvenido al servicio de Reportes"),
                 cancellationToken);

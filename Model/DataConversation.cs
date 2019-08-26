@@ -7,8 +7,13 @@ namespace BotFrameworkSample.Model
 {
     public class DataConversation
     {
+        public DataConversation()
+        {
+           
+        }
+
         /// <summary>
-        /// OTP generado para el usuario
+        /// OTP generado para el usuario en este momento
         /// </summary>
         public string OTP { get; set; }
     }

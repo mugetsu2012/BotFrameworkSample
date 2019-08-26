@@ -15,10 +15,12 @@ namespace BotFrameworkSample.Dialogs
     public class ObtenerReporteDialog: ComponentDialog
     {
         private readonly BotStateService _botStateService;
+        private readonly int _minutosVencerNumero;
 
-        public ObtenerReporteDialog(string dialogId, BotStateService botStateService):base(dialogId)
+        public ObtenerReporteDialog(string dialogId, BotStateService botStateService, int minutosVencerNumero):base(dialogId)
         {
             _botStateService = botStateService ?? throw new ArgumentNullException(nameof(botStateService));
+            _minutosVencerNumero = minutosVencerNumero;
 
             //Mandamos a confifurar este dialogo
             InicializarCascada();
@@ -44,8 +46,8 @@ namespace BotFrameworkSample.Dialogs
             AddDialog(new ChoicePrompt($"{nameof(ObtenerReporteDialog)}.opcion"));
             AddDialog(new TextPrompt($"{nameof(ObtenerReporteDialog)}.telefono", TelefonoValidatorAsync));
             AddDialog(new TextPrompt($"{nameof(ObtenerReporteDialog)}.otp"));
-            AddDialog(new PreguntarReintentoDialog($"{nameof(ObtenerReporteDialog)}.preguntarReintento",
-                _botStateService));
+            AddDialog(new ReintentarOtpDialog($"{nameof(ObtenerReporteDialog)}.preguntarReintento",
+                _botStateService, _minutosVencerNumero));
 
             //Seteamos el main id
             InitialDialogId = $"{nameof(ObtenerReporteDialog)}.mainFlow";
@@ -113,64 +115,117 @@ namespace BotFrameworkSample.Dialogs
             CancellationToken cancellationToken)
         {
             //Extraemos el numero de telefono del paso anterior
-            stepContext.Values["telefono"] = (string)stepContext.Result;
-
-            //Mando a generar el OTP 
-            string otpFake = RandomString(8);
-
-            //Mando a sacar el DataConversation para setearle el OTP
+            string telefono = (string)stepContext.Result;
+            stepContext.Values["telefono"] = telefono;
 
             DataConversation dataConversation =
                 await _botStateService.DataConversationAccessor.GetAsync(stepContext.Context,
                     () => new DataConversation(), cancellationToken);
 
-            dataConversation.OTP = otpFake;
+            PerfilDeUsuario perfilDeUsuario =
+                await _botStateService.PerfilDeUsuarioAccessor.GetAsync(stepContext.Context,
+                    () => new PerfilDeUsuario(), cancellationToken);
 
-            //Mando a setear al state la nueva data
-            await _botStateService.DataConversationAccessor.SetAsync(stepContext.Context, dataConversation, cancellationToken);
 
-            //Le solicitamos al usuario que nos diga el OTP
+            //Seteo en numero que el usuario ingreso
+            perfilDeUsuario.NumeroTelefono = telefono;
 
-            return await stepContext.PromptAsync($"{nameof(ObtenerReporteDialog)}.otp", new PromptOptions()
+            //Si hay un numero valido, lo mando de un solo al reporte sin  pasar por el OTP
+            if (perfilDeUsuario.NumerosValidos.Any(y => y.Numero == telefono && y.FechaVencimiento >= DateTime.Now))
             {
-                Prompt = MessageFactory.Text(
-                    $"Por favor ingrese el codigo enviado a su telefono (pssst, el codigo es: {otpFake})")
-            }, cancellationToken);
+                //Marco que el numero actual es valido para que me deje pasar
+                perfilDeUsuario.EsNumeroIngresadoValido = true;
+
+                await _botStateService.PerfilDeUsuarioAccessor.SetAsync(stepContext.Context, perfilDeUsuario,
+                    cancellationToken);
+
+                return await stepContext.NextAsync("", cancellationToken);
+            }
+            else
+            {
+                //Mando a generar el OTP 
+                string otpFake = RandomString(8);
+
+                dataConversation.OTP = otpFake;
+
+                //Mando a setear al state la nueva data
+                await _botStateService.DataConversationAccessor.SetAsync(stepContext.Context, dataConversation, cancellationToken);
+
+                await _botStateService.PerfilDeUsuarioAccessor.SetAsync(stepContext.Context, perfilDeUsuario,
+                    cancellationToken);
+
+                //Le solicitamos al usuario que nos diga el OTP
+
+                return await stepContext.PromptAsync($"{nameof(ObtenerReporteDialog)}.otp", new PromptOptions()
+                {
+                    Prompt = MessageFactory.Text(
+                        $"Por favor ingrese el codigo enviado a su telefono (pssst, el codigo es: {otpFake})")
+                }, cancellationToken);
+            }
+
+            
         }
 
 
         private async Task<DialogTurnResult> ValidarOtpStepAsync(WaterfallStepContext stepContext,
             CancellationToken cancellationToken)
         {
-            string otpIngresado = (string)stepContext.Result;
-            //Sacamos el OTP que dio el usuario del paso anterior
-            stepContext.Values["otp"] = otpIngresado;
 
-            bool esOtpValido =
-                await EsOtpValidoAsync(otpIngresado, stepContext.Context, cancellationToken);
+            //Lo primero es que si el nuero era valido, nos saltamos el proceso
 
-            //Si el OTP es valido, lo mando al resumen
-            if (esOtpValido)
+            PerfilDeUsuario perfilDeUsuario = await _botStateService.PerfilDeUsuarioAccessor.GetAsync(stepContext.Context,
+                () => new PerfilDeUsuario(), cancellationToken);
+            //Si el numero es valido me salto el proceso
+
+            if (perfilDeUsuario.EsNumeroIngresadoValido)
             {
-                //Le seteo el OTP al fulano
+                //Marco la variable de conversacion como false, para resetear el estado
+                perfilDeUsuario.EsNumeroIngresadoValido = false;
 
-                // Sacamos al usuario
-                PerfilDeUsuario perfilDeUsuario = await _botStateService.PerfilDeUsuarioAccessor.GetAsync(stepContext.Context,
-                    () => new PerfilDeUsuario(), cancellationToken);
-
-                perfilDeUsuario.NumeroOTP = otpIngresado;
-
+                //Mando a guardar
                 await _botStateService.PerfilDeUsuarioAccessor.SetAsync(stepContext.Context, perfilDeUsuario,
                     cancellationToken);
 
+                //Lo mando al paso final
                 return await stepContext.NextAsync(null, cancellationToken);
             }
             else
             {
-                //Si el OTP no es valido lo mando a al step de preguntar que quiere hacer
-                return await stepContext.BeginDialogAsync($"{nameof(ObtenerReporteDialog)}.preguntarReintento", null,
-                    cancellationToken);
+                //Entra aca porque su numero no esta en la lista de validados
+
+                string otpIngresado = (string)stepContext.Result;
+                //Sacamos el OTP que dio el usuario del paso anterior
+                stepContext.Values["otp"] = otpIngresado;
+
+                bool esOtpValido =
+                    await EsOtpValidoAsync(otpIngresado, stepContext.Context, cancellationToken);
+
+                //Si el OTP es valido, lo mando al resumen
+                if (esOtpValido)
+                {
+                    //Le seteo el OTP al fulano
+                    perfilDeUsuario.NumeroOTP = otpIngresado;
+
+                    perfilDeUsuario.AgregarNumeroValido(new NumeroValido()
+                    {
+                        Numero = perfilDeUsuario.NumeroTelefono,
+                        FechaVencimiento = DateTime.Now.AddMinutes(_minutosVencerNumero)
+                    });
+
+                    await _botStateService.PerfilDeUsuarioAccessor.SetAsync(stepContext.Context, perfilDeUsuario,
+                        cancellationToken);
+
+                    return await stepContext.NextAsync(null, cancellationToken);
+                }
+                else
+                {
+                    //Si el OTP no es valido lo mando a al step de preguntar que quiere hacer
+                    return await stepContext.BeginDialogAsync($"{nameof(ObtenerReporteDialog)}.preguntarReintento", null,
+                        cancellationToken);
+                }
             }
+
+            
         }
 
         /// <summary>

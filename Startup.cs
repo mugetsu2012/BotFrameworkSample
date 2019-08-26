@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Bot.Builder;
+using Microsoft.Bot.Builder.Azure;
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Extensions.Configuration;
@@ -19,12 +20,15 @@ namespace BotFrameworkSample
 {
     public class Startup
     {
-        public Startup(IConfiguration configuration)
+        public Startup(IConfiguration configuration, IHostingEnvironment hostingEnvironment)
         {
             Configuration = configuration;
+            HostingEnvironment = hostingEnvironment;
         }
 
         public IConfiguration Configuration { get; set; }
+
+        public IHostingEnvironment HostingEnvironment { get; set; }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
@@ -61,7 +65,18 @@ namespace BotFrameworkSample
 
         private void ConfigureState(IServiceCollection services)
         {
-            services.AddSingleton<IStorage, MemoryStorage>();
+
+            if (!HostingEnvironment.IsDevelopment())
+            {
+                services.AddSingleton<IStorage, MemoryStorage>();
+            }
+            else
+            {
+                string connString = Configuration["ConnectionStringStorageBot"];
+                string containerName = Configuration["ContainerNameBot"];
+                services.AddSingleton<IStorage, AzureBlobStorage>(provider =>
+                    new AzureBlobStorage(connString, containerName));
+            }
 
             services.AddSingleton<UserState>();
 
@@ -72,7 +87,8 @@ namespace BotFrameworkSample
 
         private void ConfigureDialogs(IServiceCollection service)
         {
-            service.AddSingleton<Dialog, MainDialog>();
+            int minutosVencerNumero = int.Parse(Configuration["minutosVencerNumero"]);
+            service.AddSingleton<Dialog, MainDialog>(x => new MainDialog(x.GetService<BotStateService>(), minutosVencerNumero));
         }
 
     }

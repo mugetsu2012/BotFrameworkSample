@@ -10,6 +10,13 @@ namespace BotFrameworkSample.Model
     /// </summary>
     public class PerfilDeUsuario
     {
+        public PerfilDeUsuario()
+        {
+            NumerosValidos = new List<NumeroValido>();
+            EsNumeroIngresadoValido = false;
+        }
+
+
         /// <summary>
         /// Almacenamo lo que queria el usuario
         /// </summary>
@@ -30,5 +37,31 @@ namespace BotFrameworkSample.Model
         /// Guardamos el OTP del usuario
         /// </summary>
         public string NumeroOTP { get; set; }
+
+
+
+        /// <summary>
+        /// Indica que este numero se encuentra dentro de la lista de datos y por lo tanto no hay que validar
+        /// </summary>
+        public bool EsNumeroIngresadoValido { get; set; }
+
+        /// <summary>
+        /// Lista de numeros que ya son validos por haber pasado el proceso OTP
+        /// </summary>
+        public List<NumeroValido> NumerosValidos { get; set; }
+
+        public void AgregarNumeroValido(NumeroValido numeroValido)
+        {
+            //Primero veo que si ya tengo este numero nomas lo sobreeescribo
+            if (NumerosValidos.Any(y => y.Numero == numeroValido.Numero))
+            {
+                NumerosValidos.First(t => t.Numero == numeroValido.Numero).FechaVencimiento =
+                    numeroValido.FechaVencimiento;
+            }
+            else
+            {
+                NumerosValidos.Add(numeroValido);
+            }
+        }
     }
 }
